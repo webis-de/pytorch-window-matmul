@@ -40,7 +40,6 @@ def get_query(
     batch_size: int, num_heads: int, seq_len: int, hidden_dim: int
 ) -> torch.Tensor:
     tensor = torch.randn(batch_size, seq_len, hidden_dim * num_heads)
-    tensor = torch.arange(batch_size * seq_len * hidden_dim * num_heads) + 1
     tensor = tensor.view(batch_size, seq_len, num_heads, -1).transpose(-2, -3)
     return tensor
 
@@ -50,7 +49,6 @@ def get_key(
     batch_size: int, num_heads: int, seq_len: int, hidden_dim: int
 ) -> torch.Tensor:
     tensor = torch.randn(batch_size, seq_len, hidden_dim * num_heads)
-    tensor = torch.arange(batch_size * seq_len * hidden_dim * num_heads) + 1
     tensor = tensor.view(batch_size, seq_len, num_heads, -1).transpose(-2, -3)
     return tensor
 
@@ -60,7 +58,6 @@ def get_value(
     batch_size: int, num_heads: int, seq_len: int, hidden_dim: int
 ) -> torch.Tensor:
     tensor = torch.randn(batch_size, seq_len, hidden_dim * num_heads)
-    tensor = torch.arange(batch_size * seq_len * hidden_dim * num_heads) + 1
     tensor = tensor.view(batch_size, seq_len, num_heads, -1).transpose(-2, -3)
     return tensor
 
@@ -70,7 +67,6 @@ def get_att(
     batch_size: int, num_heads: int, seq_len: int, window_size: int
 ) -> torch.Tensor:
     tensor = torch.randn(batch_size, num_heads, seq_len, window_size * 2 + 1)
-    tensor = torch.arange(batch_size * num_heads * seq_len * (window_size * 2 + 1))
     tensor = tensor.view(batch_size, num_heads, seq_len, window_size * 2 + 1)
     for i in range(seq_len):
         tensor[:, :, i, : max(window_size - i, 0)] = 0

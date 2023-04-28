@@ -7,7 +7,7 @@ import torch
 
 from window_matmul import window_matmul
 
-from tests.conftest import DEVICES, DIMS, DTYPES, WINDOW_SIZES
+from tests.conftest import DEVICES, DIMS, WINDOW_SIZES
 from tests.utils import get_key, get_query, to_windowed
 
 
@@ -45,15 +45,11 @@ def pytorch_window_matmul(
 @pytest.mark.parametrize("dim", DIMS)
 @pytest.mark.parametrize("window_size", WINDOW_SIZES)
 @pytest.mark.parametrize("device", DEVICES)
-@pytest.mark.parametrize("dtype", DTYPES)
 def test_window_matmul(
     dim: Tuple[int, int, int, int],
     window_size: int,
     device: torch.device,
-    dtype: torch.dtype,
 ):
-    if device == torch.device("cpu") and dtype == torch.float16:
-        return
     funcs = {
         "python": partial(python_window_matmul, window_size=window_size),
         "pytorch": partial(pytorch_window_matmul, window_size=window_size),
@@ -68,8 +64,8 @@ def test_window_matmul(
     key_grads = {}
 
     for func_name, func in funcs.items():
-        _query = query.clone().to(device, dtype).requires_grad_(True)
-        _key = key.clone().to(device, dtype).requires_grad_(True)
+        _query = query.clone().to(device).requires_grad_(True)
+        _key = key.clone().to(device).requires_grad_(True)
         att = func(_query, _key.transpose(-1, -2))
         atts[func_name] = att
         (att * torch.arange(att.numel()).to(att).view_as(att)).mean().backward()

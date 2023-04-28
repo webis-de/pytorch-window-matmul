@@ -343,6 +343,7 @@ def test_window_matmul(
     manual_query_grad, manual_key_grad = threaded_window_matmul_bw(
         query, key.transpose(-1, -2), att_grad, window_size, block_size
     )
+    manual_key_grad = manual_key_grad.transpose(-1, -2)
 
     for func_name_1, func_name_2 in combinations(funcs, 2):
         att_1 = atts[func_name_1]

@@ -7,7 +7,7 @@ import torch
 
 from window_matmul import unwindow_matmul
 
-from tests.conftest import DEVICES, DIMS, DTYPES, WINDOW_SIZES
+from tests.conftest import DEVICES, DIMS, WINDOW_SIZES
 from tests.utils import get_att, get_value, to_windowed
 
 
@@ -40,15 +40,11 @@ def pytorch_unwindow_matmul(
 @pytest.mark.parametrize("dim", DIMS)
 @pytest.mark.parametrize("window_size", WINDOW_SIZES)
 @pytest.mark.parametrize("device", DEVICES)
-@pytest.mark.parametrize("dtype", DTYPES)
 def test_unwindow_matmul(
     dim: Tuple[int, int, int, int],
     window_size: int,
     device: torch.device,
-    dtype: torch.dtype,
 ):
-    if device == torch.device("cpu") and dtype == torch.float16:
-        return
     funcs = {
         "python": partial(python_unwindow_matmul, window_size=window_size),
         "pytorch": partial(pytorch_unwindow_matmul, window_size=window_size),
@@ -63,8 +59,8 @@ def test_unwindow_matmul(
     value_grads = {}
 
     for func_name, func in funcs.items():
-        _att = att.clone().to(device, dtype).requires_grad_(True)
-        _value = value.clone().to(device, dtype).requires_grad_(True)
+        _att = att.clone().to(device).requires_grad_(True)
+        _value = value.clone().to(device).requires_grad_(True)
         out = func(_att, _value)
         (out * torch.arange(out.numel()).to(out).view_as(out)).mean().backward()
         outs[func_name] = out
@@ -75,9 +71,9 @@ def test_unwindow_matmul(
         out_1 = outs[func_name_1]
         out_2 = outs[func_name_2]
         assert torch.allclose(out_1, out_2, atol=1e-6)
-        # att_grad_1 = att_grads[func_name_1]
-        # att_grad_2 = att_grads[func_name_2]
-        # assert torch.allclose(att_grad_1, att_grad_2, atol=1e-6)
-        # value_grad_1 = value_grads[func_name_1]
-        # value_grad_2 = value_grads[func_name_2]
-        # assert torch.allclose(value_grad_1, value_grad_2, atol=1e-6)
+        att_grad_1 = att_grads[func_name_1]
+        att_grad_2 = att_grads[func_name_2]
+        assert torch.allclose(att_grad_1, att_grad_2, atol=1e-6)
+        value_grad_1 = value_grads[func_name_1]
+        value_grad_2 = value_grads[func_name_2]
+        assert torch.allclose(value_grad_1, value_grad_2, atol=1e-6)

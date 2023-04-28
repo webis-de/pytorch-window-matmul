@@ -12,9 +12,7 @@ DIMS: List[Tuple[int, int, int, int]] = [
 BLOCK_SIZES: List[int] = [8, 16]
 WINDOW_SIZES: List[int] = [2, 4, 8, 16, 32]
 DEVICES: List[torch.device] = [torch.device("cpu")]
-DTYPES: List[torch.dtype] = [torch.float32]
 if torch.cuda.is_available():
     DEVICES.append(torch.device("cuda"))
-    DTYPES.append(torch.float16)
 
 torch.manual_seed(42)

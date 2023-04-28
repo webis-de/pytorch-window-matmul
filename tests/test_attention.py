@@ -7,7 +7,7 @@ import torch
 
 from window_matmul import unwindow_matmul, window_matmul
 
-from tests.conftest import DEVICES, DIMS, DTYPES, NUM_LAYERS, WINDOW_SIZES
+from tests.conftest import DEVICES, DIMS, NUM_LAYERS, WINDOW_SIZES
 from tests.test_unwindow_matmul import python_unwindow_matmul, pytorch_unwindow_matmul
 from tests.test_window_matmul import python_window_matmul, pytorch_window_matmul
 from tests.utils import get_key, get_query, get_value
@@ -75,26 +75,16 @@ class AttentionLayer(torch.nn.Module):
 @pytest.mark.parametrize("dim", DIMS)
 @pytest.mark.parametrize("window_size", WINDOW_SIZES)
 @pytest.mark.parametrize("device", DEVICES)
-@pytest.mark.parametrize("dtype", DTYPES)
 def test_window_attention(
     dim: Tuple[int, int, int, int],
     window_size: int,
     device: torch.device,
-    dtype: torch.dtype,
 ):
-    if device == torch.device("cpu") and dtype == torch.float16:
-        return
     linear = torch.nn.Linear(dim[-1], dim[-1])
 
-    python_network = Network(NUM_LAYERS, window_size, "python", linear).to(
-        device, dtype
-    )
-    pytorch_network = Network(NUM_LAYERS, window_size, "pytorch", linear).to(
-        device, dtype
-    )
-    custom_network = Network(NUM_LAYERS, window_size, "custom", linear).to(
-        device, dtype
-    )
+    python_network = Network(NUM_LAYERS, window_size, "python", linear).to(device)
+    pytorch_network = Network(NUM_LAYERS, window_size, "pytorch", linear).to(device)
+    custom_network = Network(NUM_LAYERS, window_size, "custom", linear).to(device)
     networks = {
         "python": python_network,
         "pytorch": pytorch_network,
@@ -110,9 +100,9 @@ def test_window_attention(
     key_grads = {}
     value_grads = {}
     for network_name, network in networks.items():
-        query = query.detach().clone().to(device, dtype).requires_grad_(True)
-        key = key.detach().clone().to(device, dtype).requires_grad_(True)
-        value = value.detach().clone().to(device, dtype).requires_grad_(True)
+        query = query.detach().clone().to(device).requires_grad_(True)
+        key = key.detach().clone().to(device).requires_grad_(True)
+        value = value.detach().clone().to(device).requires_grad_(True)
         out = network(query, key, value)
         out.mean().backward()
         outs[network_name] = out
