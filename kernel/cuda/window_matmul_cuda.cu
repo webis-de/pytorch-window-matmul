@@ -52,7 +52,6 @@ __global__ void window_matmul_kernel(
   // A: b x m x k
   // B: b x m x k
   // C: b x m x 2w + 1
-  // grid dim: ceil((2w + 1) / blocksize), ceil(m / blocksize), b
 
   // Block index
   int block_x = blockIdx.x;
@@ -99,7 +98,6 @@ __global__ void window_matmul_kernel(
   C_accessor[batch_idx][c_m][c_w] = c_sub;
 }
 
-
 template <typename scalar_t>
 __global__ void unwindow_matmul_kernel_A(
     torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> A_accessor,
@@ -110,7 +108,6 @@ __global__ void unwindow_matmul_kernel_A(
   // A: b x m x 2w + 1
   // B: b x m x k
   // C: b x m x k
-  // grid dim: ceil((2w + 1) / blocksize), ceil(m / blocksize), b
 
   // Block index
   int block_x = blockIdx.x;
@@ -133,7 +130,7 @@ __global__ void unwindow_matmul_kernel_A(
     num_blocks = 2;
   else
     // ceil (2w+1 / BLOCKSIZE)
-    num_blocks = ceil(A_accessor.size(2) / (float) BLOCKSIZE);
+    num_blocks = ceil(A_accessor.size(2) / (float)BLOCKSIZE);
 
   scalar_t c_sub = 0;
   for (int block_idx = 0; block_idx < num_blocks; block_idx++)
@@ -149,8 +146,8 @@ __global__ void unwindow_matmul_kernel_A(
     int a_w = aw_idx - thread_y;
     int b_m = a_m_start + bw_idx - window_size;
 
-    load<scalar_t>(thread_x, thread_y, batch_idx, a_m, a_w, A_accessor, a_shared);
-    load<scalar_t>(thread_x, thread_y, batch_idx, b_m, b_k, B_accessor, b_shared);
+    load<scalar_t>(thread_y, thread_x, batch_idx, a_m, a_w, A_accessor, a_shared);
+    load<scalar_t>(thread_y, thread_x, batch_idx, b_m, b_k, B_accessor, b_shared);
     __syncthreads();
 
     // Compute the partial product
@@ -176,7 +173,6 @@ __global__ void unwindow_matmul_kernel_B(
   // A: b x m x 2w + 1
   // B: b x m x k
   // C: b x m x k
-  // grid dim: ceil((2w + 1) / blocksize), ceil(m / blocksize), b
 
   // Block index
   int block_x = blockIdx.x;
@@ -199,7 +195,7 @@ __global__ void unwindow_matmul_kernel_B(
     num_blocks = 2;
   else
     // ceil (2w+1 / BLOCKSIZE)
-    num_blocks = ceil(A_accessor.size(2) / (float) BLOCKSIZE);
+    num_blocks = ceil(A_accessor.size(2) / (float)BLOCKSIZE);
 
   scalar_t c_sub = 0;
   for (int block_idx = 0; block_idx < num_blocks; block_idx++)
@@ -213,11 +209,11 @@ __global__ void unwindow_matmul_kernel_B(
     int a_m = a_m_start + thread_y - window_size + block;
     int aw_idx = block + thread_x;
     int bw_idx = block + thread_y;
-    int a_w = aw_idx - thread_y + 2 * window_size - block * 2
+    int a_w = aw_idx - thread_y + 2 * window_size - block * 2;
     int b_m = a_m_start + bw_idx - window_size;
 
     load<scalar_t>(thread_x, thread_y, batch_idx, a_m, a_w, A_accessor, a_shared); // transpose A
-    load<scalar_t>(thread_y, thread_y, batch_idx, b_m, b_k, B_accessor, b_shared);
+    load<scalar_t>(thread_y, thread_x, batch_idx, b_m, b_k, B_accessor, b_shared);
     __syncthreads();
 
     // Compute the partial product
@@ -233,13 +229,15 @@ __global__ void unwindow_matmul_kernel_B(
   C_accessor[batch_idx][c_m][c_k] = c_sub;
 }
 
-dim3 get_grid(int b, int m, int window_size) {
+dim3 get_grid(int b, int m, int window_size)
+{
   dim3 grid;
-  if (window_size < BLOCKSIZE && BLOCKSIZE <= A.size(1))
+  int num_w_blocks, num_m_blocks;
+  if (window_size < BLOCKSIZE && BLOCKSIZE <= m)
     num_w_blocks = 2;
   else
-    num_w_blocks = ceil((window_size * 2 + 1) / (float) BLOCKSIZE);
-  num_m_blocks = ceil(m / (float) BLOCKSIZE);
+    num_w_blocks = ceil((window_size * 2 + 1) / (float)BLOCKSIZE);
+  num_m_blocks = ceil(m / (float)BLOCKSIZE);
   grid.x = num_w_blocks;
   grid.y = num_m_blocks;
   grid.z = b;
@@ -256,6 +254,7 @@ torch::Tensor window_matmul_fw_cuda(torch::Tensor A, torch::Tensor B, int window
   CHECK_INPUT(A.size(-1) == B.size(-2));
   CHECK_INPUT(A.size(-2) == B.size(-1));
 
+  // make contiguous
   A = A.contiguous();
   B = B.transpose(-1, -2).contiguous();
 
@@ -296,6 +295,7 @@ std::tuple<torch::Tensor, torch::Tensor> window_matmul_bw_cuda(
   CHECK_INPUT(A.size(-1) == B.size(-2));
   CHECK_INPUT(A.size(-2) == B.size(-1));
 
+  // make contiguous
   A = A.contiguous();
   B = B.transpose(-1, -2).contiguous();
   grad_C = grad_C.contiguous();
@@ -328,7 +328,7 @@ std::tuple<torch::Tensor, torch::Tensor> window_matmul_bw_cuda(
           A_accessor,
           grad_B_accessor,
           window_size); });
-  return std::make_tuple(grad_A, grad_B);
+  return std::make_tuple(grad_A, grad_B.transpose(-1, -2));
 }
 
 torch::Tensor unwindow_matmul_fw_cuda(torch::Tensor A, torch::Tensor B, int window_size)
@@ -341,6 +341,7 @@ torch::Tensor unwindow_matmul_fw_cuda(torch::Tensor A, torch::Tensor B, int wind
   CHECK_INPUT(A.size(-1) == window_size * 2 + 1);
   CHECK_INPUT(A.size(-2) == B.size(-2));
 
+  // make contiguous
   A = A.contiguous();
   B = B.contiguous();
 
@@ -404,12 +405,14 @@ std::tuple<torch::Tensor, torch::Tensor> unwindow_matmul_bw_cuda(
         window_matmul_kernel<scalar_t><<<grid, threads>>>(
           grad_C_accessor,
           B_accessor,
-          grad_A_accessor
+          grad_A_accessor,
+          window_size
           );
         unwindow_matmul_kernel_B<scalar_t><<<grid, threads>>>(
           A_accessor,
           grad_C_accessor,
-          grad_B_accessor
+          grad_B_accessor,
+          window_size
           ); });
   return std::make_tuple(grad_A, grad_B);
 }
