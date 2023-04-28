@@ -314,7 +314,6 @@ def test_window_matmul(
         "threaded": partial(
             threaded_window_matmul_fw, window_size=window_size, block_size=block_size
         ),
-        # "custom": partial(window_matmul, window_size=window_size),
     }
 
     query = get_query(*dim)
@@ -382,7 +381,6 @@ def test_unwindow_matmul(
         "threaded": partial(
             threaded_unwindow_matmul_fw, window_size=window_size, block_size=block_size
         ),
-        # "custom": partial(unwindow_matmul, window_size=window_size),
     }
 
     att = get_att(*dim[:-1], window_size)
