@@ -12,14 +12,14 @@
 
 template <typename scalar_t>
 __device__ void load(
-    int thread_y, int thread_x, int b, int accessor_x, int accessor_y,
+    int thread_y, int thread_x, int b, int accessor_y, int accessor_x
     torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> accessor,
     _VOLATILE_ scalar_t shared[BLOCKSIZE][BLOCKSIZE])
 {
   if (
       accessor_x >= 0 && accessor_x < accessor.size(1) && accessor_y >= 0 && accessor_y < accessor.size(2))
   {
-    shared[thread_y][thread_x] = accessor[b][accessor_x][accessor_y];
+    shared[thread_y][thread_x] = accessor[b][accessor_y][accessor_x];
   }
   else
   {
