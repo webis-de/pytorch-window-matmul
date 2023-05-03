@@ -17,14 +17,11 @@ __device__ void load(
     _VOLATILE_ scalar_t shared[BLOCKSIZE][BLOCKSIZE])
 {
   if (
-      accessor_x >= 0 && accessor_x < accessor.size(1) && accessor_y >= 0 && accessor_y < accessor.size(2))
-  {
+      accessor_x >= 0 && accessor_x < accessor.size(1) && accessor_y >= 0 && accessor_y < accessor.size(2)
+    )
     shared[thread_y][thread_x] = accessor[b][accessor_x][accessor_y];
-  }
   else
-  {
     shared[thread_y][thread_x] = 0;
-  }
 }
 
 template <typename scalar_t>
@@ -52,7 +49,6 @@ __global__ void window_matmul_kernel(
   // A: b x m x k
   // B: b x m x k
   // C: b x m x 2w + 1
-  // grid dim: ceil((2w + 1) / blocksize), ceil(m / blocksize), b
 
   // Block index
   int block_x = blockIdx.x;
@@ -71,6 +67,9 @@ __global__ void window_matmul_kernel(
 
   // ceil (K / BLOCKSIZE)
   int num_blocks = ceil(A_accessor.size(2) + (float)BLOCKSIZE);
+
+  if (a_m >= A_accessor.size(1) || b_m >= B_accessor.size(1))
+    return;
 
   scalar_t c_sub = 0;
   for (int block_idx = 0; block_idx < num_blocks; block_idx++)
@@ -110,7 +109,6 @@ __global__ void unwindow_matmul_kernel_A(
   // A: b x m x 2w + 1
   // B: b x m x k
   // C: b x m x k
-  // grid dim: ceil((2w + 1) / blocksize), ceil(m / blocksize), b
 
   // Block index
   int block_x = blockIdx.x;
@@ -126,6 +124,9 @@ __global__ void unwindow_matmul_kernel_A(
   int b_k_start = BLOCKSIZE * block_x;
   int a_m = a_m_start + thread_y;
   int b_k = b_k_start + thread_x;
+
+  if (a_m >= A_accessor.size(1) || b_k >= B_accessor.size(2))
+    return;
 
   int num_blocks;
   if (window_size < BLOCKSIZE && BLOCKSIZE <= A_accessor.size(1))
@@ -176,7 +177,6 @@ __global__ void unwindow_matmul_kernel_B(
   // A: b x m x 2w + 1
   // B: b x m x k
   // C: b x m x k
-  // grid dim: ceil((2w + 1) / blocksize), ceil(m / blocksize), b
 
   // Block index
   int block_x = blockIdx.x;
@@ -192,6 +192,9 @@ __global__ void unwindow_matmul_kernel_B(
   int b_k_start = BLOCKSIZE * block_x;
   // int a_m = a_m_start + thread_y; // needs to use block_idx
   int b_k = b_k_start + thread_x;
+
+  if (b_k >= B_accessor.size(2))
+    return;  
 
   int num_blocks;
   if (window_size < BLOCKSIZE && BLOCKSIZE <= A_accessor.size(1))
@@ -252,7 +255,7 @@ torch::Tensor window_matmul_fw_cuda(torch::Tensor A, torch::Tensor B, int window
   CHECK_CUDA(B);
 
   CHECK_INPUT(A.dim() == B.dim());
-  CHECK_INPUT(A.size(0) == A.size(0));
+  CHECK_INPUT(A.size(0) == B.size(0));
   CHECK_INPUT(A.size(-1) == B.size(-2));
   CHECK_INPUT(A.size(-2) == B.size(-1));
 
@@ -292,7 +295,7 @@ std::tuple<torch::Tensor, torch::Tensor> window_matmul_bw_cuda(
   CHECK_CUDA(B);
 
   CHECK_INPUT(A.dim() == B.dim());
-  CHECK_INPUT(A.size(0) == A.size(0));
+  CHECK_INPUT(A.size(0) == B.size(0));
   CHECK_INPUT(A.size(-1) == B.size(-2));
   CHECK_INPUT(A.size(-2) == B.size(-1));
 
@@ -337,7 +340,7 @@ torch::Tensor unwindow_matmul_fw_cuda(torch::Tensor A, torch::Tensor B, int wind
   CHECK_CUDA(B);
 
   CHECK_INPUT(A.dim() == B.dim());
-  CHECK_INPUT(A.size(0) == A.size(0));
+  CHECK_INPUT(A.size(0) == B.size(0));
   CHECK_INPUT(A.size(-1) == window_size * 2 + 1);
   CHECK_INPUT(A.size(-2) == B.size(-2));
 
@@ -375,7 +378,7 @@ std::tuple<torch::Tensor, torch::Tensor> unwindow_matmul_bw_cuda(
   CHECK_CUDA(B);
 
   CHECK_INPUT(A.dim() == B.dim());
-  CHECK_INPUT(A.size(0) == A.size(0));
+  CHECK_INPUT(A.size(0) == B.size(0));
   CHECK_INPUT(A.size(-1) == window_size * 2 + 1);
   CHECK_INPUT(A.size(-2) == B.size(-2));
 
