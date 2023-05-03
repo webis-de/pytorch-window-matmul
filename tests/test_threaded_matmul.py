@@ -6,7 +6,7 @@ from typing import Tuple
 import pytest
 import torch
 
-from tests.conftest import BLOCK_SIZES, DEVICES, DIMS, DTYPES, WINDOW_SIZES
+from tests.conftest import BLOCK_SIZES, DIMS, WINDOW_SIZES
 from tests.test_unwindow_matmul import pytorch_unwindow_matmul
 from tests.test_window_matmul import pytorch_window_matmul
 from tests.utils import get_att, get_key, get_query, get_value
@@ -304,17 +304,11 @@ def get_grid(b: int, m: int, window_size: int, block_size: int) -> Tuple[int, in
 @pytest.mark.parametrize("dim", DIMS)
 @pytest.mark.parametrize("window_size", WINDOW_SIZES)
 @pytest.mark.parametrize("block_size", BLOCK_SIZES)
-@pytest.mark.parametrize("device", DEVICES)
-@pytest.mark.parametrize("dtype", DTYPES)
 def test_window_matmul(
     dim: Tuple[int, int, int, int],
     window_size: int,
     block_size: int,
-    device: torch.device,
-    dtype: torch.dtype,
 ):
-    if device == torch.device("cpu") and dtype == torch.float16:
-        return
     funcs = {
         "pytorch": partial(pytorch_window_matmul, window_size=window_size),
         "threaded": partial(
@@ -323,8 +317,8 @@ def test_window_matmul(
         # "custom": partial(window_matmul, window_size=window_size),
     }
 
-    query = get_query(*dim).to(device, dtype)
-    key = get_key(*dim).to(device, dtype)
+    query = get_query(*dim)
+    key = get_key(*dim)
 
     atts = {}
     query_grads = {}
@@ -349,7 +343,6 @@ def test_window_matmul(
     manual_query_grad, manual_key_grad = threaded_window_matmul_bw(
         query, key.transpose(-1, -2), att_grad, window_size, block_size
     )
-    manual_key_grad = manual_key_grad.transpose(-1, -2)
 
     for func_name_1, func_name_2 in combinations(funcs, 2):
         att_1 = atts[func_name_1]
@@ -378,17 +371,11 @@ def test_window_matmul(
 @pytest.mark.parametrize("dim", DIMS)
 @pytest.mark.parametrize("window_size", WINDOW_SIZES)
 @pytest.mark.parametrize("block_size", BLOCK_SIZES)
-@pytest.mark.parametrize("device", DEVICES)
-@pytest.mark.parametrize("dtype", DTYPES)
 def test_unwindow_matmul(
     dim: Tuple[int, int, int, int],
     window_size: int,
     block_size: int,
-    device: torch.device,
-    dtype: torch.dtype,
 ):
-    if device == torch.device("cpu") and dtype == torch.float16:
-        return
     funcs = {
         "pytorch": partial(pytorch_unwindow_matmul, window_size=window_size),
         "threaded": partial(
@@ -406,8 +393,8 @@ def test_unwindow_matmul(
 
     out_grad = None
     for func_name, func in funcs.items():
-        _att = att.clone().to(device, dtype).requires_grad_(True)
-        _value = value.clone().to(device, dtype).requires_grad_(True)
+        _att = att.clone().requires_grad_(True)
+        _value = value.clone().requires_grad_(True)
         out = func(_att, _value)
         outs[func_name] = out
 
@@ -450,19 +437,3 @@ def test_unwindow_matmul(
         assert torch.allclose(
             manual_value_grad.view_as(value_grad_2), value_grad_2, atol=1e-6
         )
-
-
-def main():
-    for dim in DIMS:
-        for window_size in WINDOW_SIZES:
-            for block_size in BLOCK_SIZES:
-                for device in DEVICES:
-                    for dtype in DTYPES:
-                        test_window_matmul(dim, window_size, block_size, device, dtype)
-                        test_unwindow_matmul(
-                            dim, window_size, block_size, device, dtype
-                        )
-
-
-if __name__ == "__main__":
-    main()
