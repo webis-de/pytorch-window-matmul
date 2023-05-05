@@ -12,7 +12,7 @@
 
 template <typename scalar_t>
 __device__ void load(
-    int thread_y, int thread_x, int b, int accessor_y, int accessor_x
+    int thread_y, int thread_x, int b, int accessor_y, int accessor_x,
     torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> accessor,
     _VOLATILE_ scalar_t shared[BLOCKSIZE][BLOCKSIZE])
 {
