@@ -16,8 +16,8 @@ __device__ void load(
     torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> accessor,
     _VOLATILE_ scalar_t shared[BLOCKSIZE][BLOCKSIZE])
 {
-  if (accessor_x >= 0 && accessor_x < accessor.size(1) && accessor_y >= 0 && accessor_y < accessor.size(2))
-  shared[thread_y][thread_x] = accessor[b][accessor_y][accessor_x];
+  if (accessor_y >= 0 && accessor_y < accessor.size(1) && accessor_x >= 0 && accessor_x < accessor.size(2))
+    shared[thread_y][thread_x] = accessor[b][accessor_y][accessor_x];
   else
     shared[thread_y][thread_x] = 0;
 }
@@ -32,9 +32,7 @@ __device__ void compute_sub(
   int thread_y = threadIdx.y;
 #pragma unroll
   for (int block_idx = 0; block_idx < BLOCKSIZE; block_idx++)
-  {
     sub += x_shared[thread_x][block_idx] * y_shared[block_idx][thread_y];
-  }
 }
 
 template <typename scalar_t>
@@ -64,10 +62,7 @@ __global__ void window_matmul_kernel(
   int b_m = b_m_start + thread_y;
 
   // ceil (K / BLOCKSIZE)
-  int num_blocks = ceil(A_accessor.size(2) + (float)BLOCKSIZE);
-
-  if (a_m >= A_accessor.size(1) || b_m >= B_accessor.size(1))
-    return;
+  int num_blocks = ceil(A_accessor.size(2) / (float)BLOCKSIZE);
 
   scalar_t c_sub = 0;
   for (int block_idx = 0; block_idx < num_blocks; block_idx++)
@@ -121,9 +116,6 @@ __global__ void unwindow_matmul_kernel_A(
   int b_k_start = BLOCKSIZE * block_x;
   int a_m = a_m_start + thread_y;
   int b_k = b_k_start + thread_x;
-
-  if (a_m >= A_accessor.size(1) || b_k >= B_accessor.size(2))
-    return;
 
   int num_blocks;
   if (window_size < BLOCKSIZE && BLOCKSIZE <= A_accessor.size(1))
@@ -190,9 +182,6 @@ __global__ void unwindow_matmul_kernel_B(
   // int a_m = a_m_start + thread_y; // needs to use block_idx
   int b_k = b_k_start + thread_x;
 
-  if (b_k >= B_accessor.size(2))
-    return;  
-
   int num_blocks;
   if (window_size < BLOCKSIZE && BLOCKSIZE <= A_accessor.size(1))
     // edge case when window_size < BLOCKSIZE <= m
@@ -255,8 +244,8 @@ torch::Tensor window_matmul_fw_cuda(torch::Tensor A, torch::Tensor B, int window
 
   CHECK_INPUT(A.dim() == B.dim());
   CHECK_INPUT(A.size(0) == B.size(0));
-  CHECK_INPUT(A.size(-1) == B.size(-2));
-  CHECK_INPUT(A.size(-2) == B.size(-1));
+  CHECK_INPUT(A.size(1) == B.size(2));
+  CHECK_INPUT(A.size(2) == B.size(1));
 
   // make contiguous
   A = A.contiguous();
@@ -296,8 +285,8 @@ std::tuple<torch::Tensor, torch::Tensor> window_matmul_bw_cuda(
 
   CHECK_INPUT(A.dim() == B.dim());
   CHECK_INPUT(A.size(0) == B.size(0));
-  CHECK_INPUT(A.size(-1) == B.size(-2));
-  CHECK_INPUT(A.size(-2) == B.size(-1));
+  CHECK_INPUT(A.size(1) == B.size(2));
+  CHECK_INPUT(A.size(2) == B.size(1));
 
   // make contiguous
   A = A.contiguous();
@@ -342,8 +331,8 @@ torch::Tensor unwindow_matmul_fw_cuda(torch::Tensor A, torch::Tensor B, int wind
 
   CHECK_INPUT(A.dim() == B.dim());
   CHECK_INPUT(A.size(0) == B.size(0));
-  CHECK_INPUT(A.size(-1) == window_size * 2 + 1);
-  CHECK_INPUT(A.size(-2) == B.size(-2));
+  CHECK_INPUT(A.size(1) == B.size(1));
+  CHECK_INPUT(A.size(2) == window_size * 2 + 1);
 
   // make contiguous
   A = A.contiguous();
@@ -381,8 +370,8 @@ std::tuple<torch::Tensor, torch::Tensor> unwindow_matmul_bw_cuda(
 
   CHECK_INPUT(A.dim() == B.dim());
   CHECK_INPUT(A.size(0) == B.size(0));
-  CHECK_INPUT(A.size(-1) == window_size * 2 + 1);
-  CHECK_INPUT(A.size(-2) == B.size(-2));
+  CHECK_INPUT(A.size(1) == B.size(1));
+  CHECK_INPUT(A.size(2) == window_size * 2 + 1);
 
   A = A.contiguous();
   B = B.contiguous();
