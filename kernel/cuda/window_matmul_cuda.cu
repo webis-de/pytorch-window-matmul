@@ -363,7 +363,7 @@ torch::Tensor unwindow_matmul_fw_cuda(torch::Tensor A, torch::Tensor B, int wind
 }
 
 std::tuple<torch::Tensor, torch::Tensor> unwindow_matmul_bw_cuda(
-    torch::Tensor A, torch::Tensor B, int window_size, torch::Tensor grad_output)
+    torch::Tensor A, torch::Tensor B, int window_size, torch::Tensor grad_C)
 {
   CHECK_CUDA(A);
   CHECK_CUDA(B);
@@ -375,7 +375,7 @@ std::tuple<torch::Tensor, torch::Tensor> unwindow_matmul_bw_cuda(
 
   A = A.contiguous();
   B = B.contiguous();
-  grad_output = grad_output.contiguous();
+  grad_C = grad_C.contiguous();
 
   // initialize output
   torch::Tensor grad_A, grad_B;
@@ -391,7 +391,7 @@ std::tuple<torch::Tensor, torch::Tensor> unwindow_matmul_bw_cuda(
       {
         auto A_accessor = A.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>();
         auto B_accessor = B.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>();
-        auto grad_C_accessor = grad_output.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>();
+        auto grad_C_accessor = grad_C.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>();
         auto grad_A_accessor = grad_A.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>();
         auto grad_B_accessor = grad_B.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>();
 
