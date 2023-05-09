@@ -45,5 +45,3 @@ o = window_matmul.unwindow_matmul(a, v, window_size)
 NOTE: The cpu version is not optimized and is only for reference. The cuda version is optimized and is the one to use.
 
 ## Benchmark
-
-Super slow for large batch sizes.
