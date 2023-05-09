@@ -73,6 +73,21 @@ class AttentionLayer(torch.nn.Module):
 
 
 @pytest.mark.parametrize("dim", DIMS)
+@pytest.mark.parametrize("device", DEVICES)
+def test_window_size_0(dim: Tuple[int, int, int, int], device: torch.device):
+    query = get_query(*dim, device)
+    key = get_key(*dim, device)
+    value = get_value(*dim, device)
+
+    att = window_matmul(query, key, 0)
+    att_prob = att.softmax(-1)
+    out = unwindow_matmul(att_prob, value, 0)
+
+    assert att.shape[-1] == 1
+    assert torch.allclose(out, value)
+
+
+@pytest.mark.parametrize("dim", DIMS)
 @pytest.mark.parametrize("window_size", WINDOW_SIZES)
 @pytest.mark.parametrize("device", DEVICES)
 def test_window_attention(
@@ -91,18 +106,18 @@ def test_window_attention(
         "custom": custom_network,
     }
 
-    query = get_query(*dim)
-    key = get_key(*dim)
-    value = get_value(*dim)
+    query = get_query(*dim, device)
+    key = get_key(*dim, device)
+    value = get_value(*dim, device)
 
     outs = {}
     query_grads = {}
     key_grads = {}
     value_grads = {}
     for network_name, network in networks.items():
-        query = query.detach().clone().to(device).requires_grad_(True)
-        key = key.detach().clone().to(device).requires_grad_(True)
-        value = value.detach().clone().to(device).requires_grad_(True)
+        query = query.detach().clone().requires_grad_(True)
+        key = key.detach().clone().requires_grad_(True)
+        value = value.detach().clone().requires_grad_(True)
         out = network(query, key, value)
         out.mean().backward()
         outs[network_name] = out
