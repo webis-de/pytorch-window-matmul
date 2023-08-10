@@ -31,19 +31,66 @@ def _load(
 def dot_nt(
     threads: Tuple[int, int],
     block_size: int,
-    x_shared: torch.Tensor,
     y_shared: torch.Tensor,
+    x_shared: torch.Tensor,
     sub: torch.Tensor,
 ):
-    for thread_x, thread_y, block_idx in product(
+    for thread_y, thread_x, block_idx in product(
         range(threads[0]), range(threads[1]), range(block_size)
     ):
-        sub[thread_x, thread_y] = sub[thread_x, thread_y] + (
-            x_shared[thread_x, block_idx] * y_shared[thread_y, block_idx]
+        sub[thread_y, thread_x] = sub[thread_y, thread_x] + (
+            y_shared[thread_y, block_idx] * x_shared[thread_x, block_idx]
         )
 
 
 def bgmm_nt_nn(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    C: torch.Tensor,
+    window_size: int,
+    block_size: int,
+    grid: Tuple[int, int, int],
+    threads: Tuple[int, int],
+):
+    # A: b x m x k
+    # B: b x k x m
+    # C: b x m x 2w + 1
+    _C = C.clone().detach()
+    for block_z, block_y, block_x in product(
+        range(grid[2]), range(grid[1]), range(grid[0])
+    ):
+        batch_idx = block_z
+        a_m_start = block_size * block_y
+        b_m_start = a_m_start + block_size * block_x - window_size
+        c_sub = torch.zeros(block_size, block_size)
+        num_blocks = math.ceil(A.shape[2] / block_size)
+        for block_idx in range(num_blocks):
+            a_shared = torch.zeros(
+                block_size, block_size, device=C.device, dtype=C.dtype
+            )
+            b_shared = torch.zeros(
+                block_size, block_size, device=C.device, dtype=C.dtype
+            )
+            for thread_y, thread_x in product(range(threads[1]), range(threads[0])):
+                block = block_idx * block_size
+                a_m = a_m_start + thread_y
+                b_m = b_m_start + thread_y
+                ab_k = block + thread_x
+                a_shared = _load(A, a_shared, thread_y, thread_x, batch_idx, a_m, ab_k)
+                b_shared = _load(B, b_shared, thread_y, thread_x, batch_idx, ab_k, b_m)
+            a_shared, b_shared
+            assert a_shared.sum() + b_shared.sum()
+            dot_nt(threads, block_size, a_shared, b_shared, c_sub)
+        for thread_x, thread_y in product(range(block_size), range(block_size)):
+            c_m = a_m_start + thread_x
+            c_w = b_m_start + thread_y - c_m + window_size
+            if c_m >= C.shape[1] or c_w < 0 or c_w >= C.shape[2]:
+                continue
+            _C[batch_idx, c_m, c_w] = c_sub[thread_x, thread_y]
+    return C + _C
+
+
+def bgmm_nn_nn(
     A: torch.Tensor,
     B: torch.Tensor,
     C: torch.Tensor,
@@ -197,7 +244,6 @@ def bgmm_tn_bn(
 def threaded_window_matmul_fw(
     A: torch.Tensor, B: torch.Tensor, window_size: int, block_size: int
 ) -> torch.Tensor:
-    B = B.transpose(-1, -2)
     full_window_size = window_size * 2 + 1
     *shapes, _ = A.shape
     C = torch.zeros(
@@ -228,7 +274,6 @@ def threaded_window_matmul_bw(
     window_size: int,
     block_size: int,
 ):
-    B = B.transpose(-1, -2)
     A_shape = A.shape
     B_shape = B.shape
     A = A.reshape(-1, *A.shape[-2:])
@@ -246,7 +291,7 @@ def threaded_window_matmul_bw(
     B_grad = bgmm_tn_bn(C_grad, A, B_grad, window_size, block_size, grid, threads)
     A_grad = A_grad.reshape(*A_shape)
     B_grad = B_grad.reshape(*B_shape)
-    return A_grad, B_grad.transpose(-1, -2)
+    return A_grad, B_grad
 
 
 def threaded_unwindow_matmul_fw(
@@ -294,7 +339,7 @@ def threaded_unwindow_matmul_bw(
     b_grid = (num_k_blocks, num_m_blocks, A.shape[0])
     threads = (block_size, block_size)
 
-    A_grad = bgmm_nt_nn(C_grad, B, A_grad, window_size, block_size, a_grid, threads)
+    A_grad = bgmm_nn_nn(C_grad, B, A_grad, window_size, block_size, a_grid, threads)
     B_grad = bgmm_tn_bn(A, C_grad, B_grad, window_size, block_size, b_grid, threads)
     A_grad = A_grad.reshape(*A_shape)
     B_grad = B_grad.reshape(*B_shape)
@@ -350,9 +395,9 @@ def test_window_matmul(
         key_grads[func_name] = _key.grad
 
     manual_query_grad, manual_key_grad = threaded_window_matmul_bw(
-        query, key.transpose(-1, -2), att_grad, window_size, block_size
+        query, key, att_grad, window_size, block_size
     )
-    manual_key_grad = manual_key_grad.transpose(-1, -2)
+    manual_key_grad = manual_key_grad
 
     for func_name_1, func_name_2 in combinations(funcs, 2):
         att_1 = atts[func_name_1]
