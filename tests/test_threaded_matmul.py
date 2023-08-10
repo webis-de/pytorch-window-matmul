@@ -18,33 +18,32 @@ def _load(
     thread_y: int,
     thread_x: int,
     batch_idx: int,
-    x: int,
     y: int,
+    x: int,
 ):
-    if x < 0 or x >= matrix.shape[1] or y < 0 or y >= matrix.shape[2]:
+    if y < 0 or y >= matrix.shape[1] or x < 0 or x >= matrix.shape[2]:
         shared[thread_y, thread_x] = 0
     else:
-        shared[thread_y, thread_x] = matrix[batch_idx, x, y]
+        shared[thread_y, thread_x] = matrix[batch_idx, y, x]
     return shared
 
 
-def compute_sub(
+def dot_nt(
     threads: Tuple[int, int],
     block_size: int,
     x_shared: torch.Tensor,
     y_shared: torch.Tensor,
     sub: torch.Tensor,
-) -> torch.Tensor:
+):
     for thread_x, thread_y, block_idx in product(
         range(threads[0]), range(threads[1]), range(block_size)
     ):
         sub[thread_x, thread_y] = sub[thread_x, thread_y] + (
-            x_shared[thread_x, block_idx] * y_shared[block_idx, thread_y]
+            x_shared[thread_x, block_idx] * y_shared[thread_y, block_idx]
         )
-    return sub
 
 
-def window_matmul_kernel(
+def bgmm_nt_nn(
     A: torch.Tensor,
     B: torch.Tensor,
     C: torch.Tensor,
@@ -78,9 +77,10 @@ def window_matmul_kernel(
                 b_m = b_m_start + thread_y
                 ab_k = block + thread_x
                 a_shared = _load(A, a_shared, thread_y, thread_x, batch_idx, a_m, ab_k)
-                b_shared = _load(B, b_shared, thread_x, thread_y, batch_idx, b_m, ab_k)
+                b_shared = _load(B, b_shared, thread_y, thread_x, batch_idx, b_m, ab_k)
             a_shared, b_shared
-            compute_sub(threads, block_size, a_shared, b_shared, c_sub)
+            assert a_shared.sum() + b_shared.sum()
+            dot_nt(threads, block_size, a_shared, b_shared, c_sub)
         for thread_x, thread_y in product(range(block_size), range(block_size)):
             c_m = a_m_start + thread_x
             c_w = b_m_start + thread_y - c_m + window_size
@@ -90,7 +90,7 @@ def window_matmul_kernel(
     return C + _C
 
 
-def unwindow_matmul_kernel_A(
+def bgmm_nn_bn(
     A: torch.Tensor,
     B: torch.Tensor,
     C: torch.Tensor,
@@ -109,10 +109,10 @@ def unwindow_matmul_kernel_A(
         a_m_start = block_size * block_y
         b_k_start = block_size * block_x
         c_sub = torch.zeros(block_size, block_size)
-        if window_size < block_size and block_size <= A.shape[1]:
-            num_blocks = 2
+        if window_size < block_size <= A.shape[1]:
+            num_blocks = math.ceil((block_size + window_size * 2) / block_size)
         else:
-            num_blocks = math.ceil(A.shape[2] / block_size)
+            num_blocks = math.ceil((window_size * 2 + 1) / block_size)
         for block_idx in range(num_blocks):
             a_shared = torch.zeros(
                 block_size, block_size, device=C.device, dtype=C.dtype
@@ -129,9 +129,10 @@ def unwindow_matmul_kernel_A(
                 a_w = aw_idx - thread_y
                 b_m = a_m_start - window_size + bw_idx
                 a_shared = _load(A, a_shared, thread_y, thread_x, batch_idx, a_m, a_w)
-                b_shared = _load(B, b_shared, thread_y, thread_x, batch_idx, b_m, b_k)
+                b_shared = _load(B, b_shared, thread_x, thread_y, batch_idx, b_m, b_k)
             a_shared, b_shared
-            c_sub = compute_sub(threads, block_size, a_shared, b_shared, c_sub)
+            # assert a_shared.sum() + b_shared.sum()
+            dot_nt(threads, block_size, a_shared, b_shared, c_sub)
         for thread_x, thread_y in product(range(block_size), range(block_size)):
             c_m = a_m_start + thread_x
             c_k = b_k_start + thread_y
@@ -141,7 +142,7 @@ def unwindow_matmul_kernel_A(
     return C
 
 
-def unwindow_matmul_kernel_B(
+def bgmm_tn_bn(
     A: torch.Tensor,
     B: torch.Tensor,
     C: torch.Tensor,
@@ -160,10 +161,10 @@ def unwindow_matmul_kernel_B(
         a_m_start = block_size * block_y
         b_k_start = block_size * block_x
         c_sub = torch.zeros(block_size, block_size)
-        if window_size < block_size and block_size <= A.shape[1]:
-            num_blocks = 2
+        if window_size < block_size <= A.shape[1]:
+            num_blocks = math.ceil((block_size + window_size * 2) / block_size)
         else:
-            num_blocks = math.ceil(A.shape[2] / block_size)
+            num_blocks = math.ceil((window_size * 2 + 1) / block_size)
         for block_idx in range(num_blocks):
             a_shared = torch.zeros(
                 block_size, block_size, device=C.device, dtype=C.dtype
@@ -180,9 +181,10 @@ def unwindow_matmul_kernel_B(
                 a_w = aw_idx - thread_y + 2 * window_size - block * 2
                 b_m = a_m_start + bw_idx - window_size
                 a_shared = _load(A, a_shared, thread_x, thread_y, batch_idx, a_m, a_w)
-                b_shared = _load(B, b_shared, thread_y, thread_x, batch_idx, b_m, b_k)
+                b_shared = _load(B, b_shared, thread_x, thread_y, batch_idx, b_m, b_k)
             a_shared, b_shared
-            c_sub = compute_sub(threads, block_size, a_shared, b_shared, c_sub)
+            # assert a_shared.sum() + b_shared.sum()
+            dot_nt(threads, block_size, a_shared, b_shared, c_sub)
         for thread_x, thread_y in product(range(block_size), range(block_size)):
             c_m = a_m_start + thread_x
             c_k = b_k_start + thread_y
@@ -205,10 +207,15 @@ def threaded_window_matmul_fw(
     B = B.reshape(-1, *B.shape[-2:])
     C = C.reshape(-1, *C.shape[-2:])
 
-    grid = get_grid(A.shape[0], A.shape[1], window_size, block_size)
+    if window_size < block_size <= A.shape[1]:
+        num_w_blocks = math.ceil((block_size + window_size * 2) / block_size)
+    else:
+        num_w_blocks = math.ceil((window_size * 2 + 1) / block_size)
+    num_m_blocks = math.ceil(A.shape[1] / block_size)
+    grid = (num_w_blocks, num_m_blocks, A.shape[0])
     threads = (block_size, block_size)
 
-    C = window_matmul_kernel(A, B, C, window_size, block_size, grid, threads)
+    C = bgmm_nt_nn(A, B, C, window_size, block_size, grid, threads)
 
     C = C.reshape(*shapes, full_window_size)
     return C
@@ -230,15 +237,13 @@ def threaded_window_matmul_bw(
     B_grad = torch.zeros_like(B)
     C_grad = C_grad.reshape(-1, *C_grad.shape[-2:])
 
-    grid = get_grid(A.shape[0], A.shape[1], window_size, block_size)
+    num_k_blocks = math.ceil(B.shape[2] / block_size)
+    num_m_blocks = math.ceil(A.shape[1] / block_size)
+    grid = (num_k_blocks, num_m_blocks, A.shape[0])
     threads = (block_size, block_size)
 
-    A_grad = unwindow_matmul_kernel_A(
-        C_grad, B, A_grad, window_size, block_size, grid, threads
-    )
-    B_grad = unwindow_matmul_kernel_B(
-        C_grad, A, B_grad, window_size, block_size, grid, threads
-    )
+    A_grad = bgmm_nn_bn(C_grad, B, A_grad, window_size, block_size, grid, threads)
+    B_grad = bgmm_tn_bn(C_grad, A, B_grad, window_size, block_size, grid, threads)
     A_grad = A_grad.reshape(*A_shape)
     B_grad = B_grad.reshape(*B_shape)
     return A_grad, B_grad.transpose(-1, -2)
@@ -253,10 +258,12 @@ def threaded_unwindow_matmul_fw(
     B = B.reshape(-1, *B.shape[-2:])
     C = C.reshape(-1, *C.shape[-2:])
 
-    grid = get_grid(A.shape[0], A.shape[1], window_size, block_size)
+    num_m_blocks = math.ceil(A.shape[1] / block_size)
+    num_k_blocks = math.ceil(B.shape[2] / block_size)
+    grid = (num_k_blocks, num_m_blocks, A.shape[0])
     threads = (block_size, block_size)
 
-    C = unwindow_matmul_kernel_A(A, B, C, window_size, block_size, grid, threads)
+    C = bgmm_nn_bn(A, B, C, window_size, block_size, grid, threads)
 
     C = C.reshape(*shapes, C.shape[-1])
     return C
@@ -277,15 +284,18 @@ def threaded_unwindow_matmul_bw(
     B_grad = torch.zeros_like(B, dtype=C_grad.dtype)
     C_grad = C_grad.reshape(-1, *C_grad.shape[-2:])
 
-    grid = get_grid(A.shape[0], A.shape[1], window_size, block_size)
+    num_m_blocks = math.ceil(A.shape[1] / block_size)
+    num_k_blocks = math.ceil(B.shape[2] / block_size)
+    if window_size < block_size <= A.shape[1]:
+        num_w_blocks = math.ceil((block_size + window_size * 2) / block_size)
+    else:
+        num_w_blocks = math.ceil((window_size * 2 + 1) / block_size)
+    a_grid = (num_w_blocks, num_m_blocks, A.shape[0])
+    b_grid = (num_k_blocks, num_m_blocks, A.shape[0])
     threads = (block_size, block_size)
 
-    A_grad = window_matmul_kernel(
-        C_grad, B, A_grad, window_size, block_size, grid, threads
-    )
-    B_grad = unwindow_matmul_kernel_B(
-        A, C_grad, B_grad, window_size, block_size, grid, threads
-    )
+    A_grad = bgmm_nt_nn(C_grad, B, A_grad, window_size, block_size, a_grid, threads)
+    B_grad = bgmm_tn_bn(A, C_grad, B_grad, window_size, block_size, b_grid, threads)
     A_grad = A_grad.reshape(*A_shape)
     B_grad = B_grad.reshape(*B_shape)
     return A_grad, B_grad
@@ -293,7 +303,7 @@ def threaded_unwindow_matmul_bw(
 
 def get_grid(b: int, m: int, window_size: int, block_size: int) -> Tuple[int, int, int]:
     full_window_size = window_size * 2 + 1
-    if window_size < block_size and block_size <= m:
+    if window_size < block_size <= A.shape[1] and block_size <= m:
         num_w_blocks = 2
     else:
         num_w_blocks = math.ceil(full_window_size / block_size)
@@ -316,8 +326,8 @@ def test_window_matmul(
         ),
     }
 
-    query = get_query(*dim)
-    key = get_key(*dim)
+    query = get_query(*dim, device=torch.device("cpu"))
+    key = get_key(*dim, device=torch.device("cpu"))
 
     atts = {}
     query_grads = {}
@@ -335,7 +345,7 @@ def test_window_matmul(
             att_grad = grad
 
         att.register_hook(_get_grad)
-        (att * torch.arange(att.numel()).to(att).view_as(att)).mean().backward()
+        (att * torch.arange(1, att.numel() + 1).to(att).view_as(att)).mean().backward()
         query_grads[func_name] = _query.grad
         key_grads[func_name] = _key.grad
 
@@ -383,8 +393,8 @@ def test_unwindow_matmul(
         ),
     }
 
-    att = get_att(*dim[:-1], window_size)
-    value = get_value(*dim)
+    att = get_att(*dim[:-1], window_size, device=torch.device("cpu"))
+    value = get_value(*dim, torch.device("cpu"))
 
     outs = {}
     att_grads = {}
@@ -402,7 +412,7 @@ def test_unwindow_matmul(
             out_grad = grad
 
         out.register_hook(_get_grad)
-        (out * torch.arange(out.numel()).to(out).view_as(out)).mean().backward()
+        (out * torch.arange(1, out.numel() + 1).to(out).view_as(out)).mean().backward()
         att_grads[func_name] = _att.grad
         value_grads[func_name] = _value.grad
 

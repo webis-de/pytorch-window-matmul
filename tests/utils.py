@@ -35,38 +35,46 @@ def memoize(func):
     return memoized_func
 
 
-@memoize
-def get_query(
+def get_tensor(
     batch_size: int, num_heads: int, seq_len: int, hidden_dim: int, device: torch.device
 ) -> torch.Tensor:
     tensor = torch.randn(batch_size, seq_len, hidden_dim * num_heads, device=device)
     tensor = tensor.view(batch_size, seq_len, num_heads, -1).transpose(-2, -3)
     return tensor
+
+
+@memoize
+def get_query(
+    batch_size: int, num_heads: int, seq_len: int, hidden_dim: int, device: torch.device
+) -> torch.Tensor:
+    return get_tensor(batch_size, num_heads, seq_len, hidden_dim, device)
 
 
 @memoize
 def get_key(
     batch_size: int, num_heads: int, seq_len: int, hidden_dim: int, device: torch.device
 ) -> torch.Tensor:
-    tensor = torch.randn(batch_size, seq_len, hidden_dim * num_heads, device=device)
-    tensor = tensor.view(batch_size, seq_len, num_heads, -1).transpose(-2, -3)
-    return tensor
+    return get_tensor(batch_size, num_heads, seq_len, hidden_dim, device)
 
 
 @memoize
 def get_value(
     batch_size: int, num_heads: int, seq_len: int, hidden_dim: int, device: torch.device
 ) -> torch.Tensor:
-    tensor = torch.randn(batch_size, seq_len, hidden_dim * num_heads, device=device)
-    tensor = tensor.view(batch_size, seq_len, num_heads, -1).transpose(-2, -3)
-    return tensor
+    return get_tensor(batch_size, num_heads, seq_len, hidden_dim, device)
 
 
 @memoize
 def get_att(
-    batch_size: int, num_heads: int, seq_len: int, window_size: int, device: torch.device
+    batch_size: int,
+    num_heads: int,
+    seq_len: int,
+    window_size: int,
+    device: torch.device,
 ) -> torch.Tensor:
-    tensor = torch.randn(batch_size, num_heads, seq_len, window_size * 2 + 1, device=device)
+    tensor = torch.randn(
+        batch_size, num_heads, seq_len, window_size * 2 + 1, device=device
+    )
     tensor = tensor.view(batch_size, num_heads, seq_len, window_size * 2 + 1)
     for i in range(seq_len):
         tensor[:, :, i, : max(window_size - i, 0)] = 0
