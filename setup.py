@@ -23,7 +23,7 @@ if torch.cuda.is_available():
 
 def get_extension():
     setup_dir = pathlib.Path(".")
-    src_dir = setup_dir / "kernel"
+    src_dir = setup_dir / "csrc" / "window_matmul"
     src_files = []
     src_files.extend(src_dir.rglob("*.cpp"))
     src_files.extend(src_dir.rglob("*.cu"))
@@ -79,7 +79,7 @@ def get_extension():
 
     Extension = CUDAExtension if WITH_CUDA else CppExtension
     extension = Extension(
-        "kernel",
+        "window_matmul_kernel",
         src_files,
         include_dirs=[str(src_dir)],
         define_macros=define_macros,
@@ -103,7 +103,6 @@ setup(
     author="Ferdinand Schlatt",
     author_email="ferdinand.schlatt@uni-jena.de",
     url=URL,
-    # download_url=f"{URL}/archive/{__version__}.tar.gz",
     keywords=["pytorch", "matmul", "window"],
     python_requires=">=3.7",
     ext_modules=get_extension(),
