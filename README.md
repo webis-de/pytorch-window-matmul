@@ -11,6 +11,12 @@ To complete the windowed attention operation, the attention matrix $A$ needs to 
 
 ## Installation and Usage
 
+Be sure to have the cudatoolkit installed before running pip install. We recommend installing the cudatoolkit using conda.
+
+```bash
+conda install -c nvidia cuda-toolkit
+```
+
 To install the package run
 
 ```bash
