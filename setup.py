@@ -66,6 +66,8 @@ def get_extension():
         nvcc_flags = os.getenv("NVCC_FLAGS", "")
         nvcc_flags = [] if nvcc_flags == "" else nvcc_flags.split(" ")
         nvcc_flags += ["-O3"]
+        if not torch.cuda.device_count():
+            nvcc_flags += ["-arch", "all-major"]
         if torch.version.hip:
             # USE_ROCM was added to later versions of PyTorch.
             # Define here to support older PyTorch versions as well:
