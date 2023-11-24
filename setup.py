@@ -16,9 +16,7 @@ from torch.utils.cpp_extension import (
 __version__ = "0.1.0"
 URL = "https://github.com/fschlatt/window_matmul"
 
-WITH_CUDA = False
-if torch.cuda.is_available():
-    WITH_CUDA = CUDA_HOME is not None
+WITH_CUDA = CUDA_HOME is not None
 
 
 def get_extension():
