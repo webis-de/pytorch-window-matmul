@@ -111,6 +111,6 @@ setup(
             no_python_abi_suffix=True, use_ninja=False
         )
     },
-    packages=find_packages(),
+    packages=find_packages(exclude="tests"),
     include_package_data=include_package_data,
 )
